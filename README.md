@@ -111,26 +111,29 @@ def save_dicom(b):
         with output_area:
             print("Brak obrazu do zapisu. Najpierw uruchom symulację.")
         return
+
     recon = simulator.reconstruction
-    m, M = np.min(recon), np.max(recon)
-    norm_recon = ((recon - m) / (M - m) * 255).astype(np.uint8) if M != m else np.zeros(recon.shape, dtype=np.uint8)
-    final_image = norm_recon
+    final_image = convert_image_to_ubyte(recon)
+    
     patient_name = patient_name_text.value
     patient_id = patient_id_text.value
     study_date = date_picker.value or datetime.date.today()
     study_date_str = study_date.strftime("%Y%m%d")
     filename = dicom_filename_text.value.strip() or "output.dcm"
+    
     file_meta = pydicom.Dataset()
     file_meta.MediaStorageSOPClassUID = pydicom.uid.SecondaryCaptureImageStorage
     file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
     file_meta.ImplementationClassUID = pydicom.uid.PYDICOM_IMPLEMENTATION_UID
     file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
+
     dt = datetime.datetime.now()
     ds = FileDataset(filename, {}, file_meta=file_meta, preamble=b"\0" * 128)
-    ds.is_little_endian = True; ds.is_implicit_VR = False
+    ds.is_little_endian = True
+    ds.is_implicit_VR = False
     ds.SOPClassUID = pydicom.uid.SecondaryCaptureImageStorage
     ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
-    ds.Modality = "OT"
+    ds.Modality = "T"  
     ds.PatientName = patient_name
     ds.PatientID = patient_id
     ds.StudyDate = study_date_str
@@ -141,15 +144,22 @@ def save_dicom(b):
     ds.Rows, ds.Columns = final_image.shape
     ds.SamplesPerPixel = 1
     ds.PhotometricInterpretation = "MONOCHROME2"
-    ds.BitsAllocated = 8; ds.BitsStored = 8; ds.HighBit = 7; ds.PixelRepresentation = 0
+    ds.BitsAllocated = 8
+    ds.BitsStored = 8
+    ds.HighBit = 7
+    ds.PixelRepresentation = 0
+
     ds.WindowCenter = int(np.median(final_image))
     ds.WindowWidth = int(np.max(final_image) - np.min(final_image))
+
     ds.PixelData = final_image.tobytes()
-    ds.ImageType = r"DERIVED\SECONDARY"
+
+    ds.ImageType = r"ORIGINAL\PRIMARY\AXIAL"
     ds.Manufacturer = "MyTomographySimulator"
     ds.StudyDescription = comment_text.value
+
     try:
-        ds.save_as(filename)
+        ds.save_as(filename, write_like_original=False)
         with output_area:
             print(f"Pomyślnie zapisano DICOM jako: {filename}")
     except Exception as e:
